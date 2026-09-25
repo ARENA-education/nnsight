@@ -1441,3 +1441,35 @@ def test_save_is_unmounted_after_trace(gpt2: nnsight.LanguageModel):
         hs2 = gpt2.transformer.h[0].output[0].save()
     assert isinstance(hs2, torch.Tensor)
     assert not hasattr(object, "save")
+
+
+def test_save_is_unmounted_after_exception_in_trace(gpt2: nnsight.LanguageModel):
+    """An exception raised inside a trace still unmounts `.save()` from `object`."""
+    with pytest.raises(ValueError, match="intentional"):
+        with gpt2.trace("Hello world"):
+            gpt2.transformer.h[0].output[0].save()
+            raise ValueError("intentional")
+
+    assert not hasattr(object, "save")
+
+    with gpt2.trace("Hello again"):
+        values = [1, 2, 3].save()
+    assert values == [1, 2, 3]
+    assert not hasattr(object, "save")
+
+
+def test_save_is_unmounted_after_session(gpt2: nnsight.LanguageModel):
+    """`.save()` works in a session body and its nested traces, and is unmounted when the session ends."""
+    with gpt2.session():
+        outer = [0].save()
+        with gpt2.trace("Hello world"):
+            first = [1].save()
+        with gpt2.trace("Hello again"):
+            second = [2].save()
+            hs = gpt2.transformer.h[0].output[0].save()
+
+    assert outer == [0]
+    assert first == [1]
+    assert second == [2]
+    assert isinstance(hs, torch.Tensor)
+    assert not hasattr(object, "save")

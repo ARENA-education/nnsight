@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
+from ..tracing.globals import _mounted_during_execution
 from ..tracing.util import wrap_exception
 from .base import Backend
 
@@ -22,7 +23,8 @@ class ExecutionBackend(Backend):
             # that every executor (this backend, AsyncVLLMBackend, vLLM
             # serve ``server.py``, LocalSimulationBackend) routes through
             # before running the outer trace body.
-            return tracer.execute(fn)
+            with _mounted_during_execution():
+                return tracer.execute(fn)
         except Exception as e:
 
             raise wrap_exception(e, tracer.info) from None

@@ -1,12 +1,14 @@
+from contextlib import contextmanager
 from typing import Any, Tuple
 
 import torch
 from typing_extensions import Self
-from ..._c.py_mount import mount
+from ..._c.py_mount import mount, unmount
 from ... import CONFIG
 
 
 _mounted = False
+_execution_depth = 0
 
 
 def _ensure_mounted():
@@ -19,6 +21,27 @@ def _ensure_mounted():
     if CONFIG.APP.PYMOUNT and not _mounted:
         mount(Object.save, "save")
         _mounted = True
+
+
+@contextmanager
+def _mounted_during_execution():
+    """Unmount ``Object.save`` once no trace is executing any more.
+
+    ``_ensure_mounted`` installs ``save`` on ``object`` itself, so while it's mounted, ``save`` shows up in
+    ``dir()`` of every class. Leaving it there after the trace breaks libraries that inspect class
+    attributes: e.g. anyio's ``TypedAttributeSet`` raises "Attribute 'save' is missing its type annotation"
+    when ``anyio.streams.tls`` is first imported (which the OpenAI client does lazily). Traces can nest, so
+    this is reference counted; ``save`` is re-mounted on the next trace.
+    """
+    global _execution_depth, _mounted
+    _execution_depth += 1
+    try:
+        yield
+    finally:
+        _execution_depth -= 1
+        if _execution_depth == 0 and _mounted:
+            unmount("save")
+            _mounted = False
 
 
 def save(object: Any):
